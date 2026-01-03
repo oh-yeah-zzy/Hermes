@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="routes-page">
+    <div class="page-header">
+        <h1>路由规则</h1>
+        <div class="header-info">
+            <span class="route-count">共 {{ route_count }} 条规则</span>
+            <span class="last-update {% if is_stale %}stale{% endif %}">
+                最后更新: {{ last_update }}
+                {% if is_stale %}(可能已过期){% endif %}
+            </span>
+            <a href="/routes/edit" class="btn btn-secondary btn-sm">编辑本地配置</a>
+        </div>
+    </div>
+
+    {% if routes %}
+    <table class="routes-table">
+        <thead>
+            <tr>
+                <th>路径模式</th>
+                <th>方法</th>
+                <th>目标服务</th>
+                <th>服务地址</th>
+                <th>状态</th>
+                <th>优先级</th>
+                <th>来源</th>
+                <th>认证</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for route in routes %}
+            <tr class="{% if not route.enabled %}disabled{% endif %}">
+                <td>
+                    <code class="path-pattern">{{ route.path_pattern }}</code>
+                    {% if route.strip_prefix %}
+                    <br>
+                    <small class="strip-info">
+                        剥离: {{ route.strip_path or route.path_pattern }}
+                    </small>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="methods-badge">{{ route.methods }}</span>
+                </td>
+                <td>
+                    <span class="service-name">{{ route.target_service_name }}</span>
+                    <br>
+                    <small class="service-id">{{ route.target_service_id }}</small>
+                </td>
+                <td>
+                    <a href="{{ route.target_service_url }}" target="_blank" class="service-url">
+                        {{ route.target_service_url }}
+                    </a>
+                </td>
+                <td>
+                    <span class="status-badge status-{{ route.target_service_status }}">
+                        {{ route.target_service_status }}
+                    </span>
+                    {% if not route.enabled %}
+                    <br>
+                    <span class="route-disabled">规则已禁用</span>
+                    {% endif %}
+                </td>
+                <td class="priority">{{ route.priority }}</td>
+                <td>
+                    {% if route.is_local %}
+                    <span class="source-badge source-local">本地</span>
+                    {% else %}
+                    <span class="source-badge source-remote">远程</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if route.require_auth %}
+                    <span class="auth-badge auth-required">需要</span>
+                    {% else %}
+                    <span class="auth-badge auth-public">公开</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">&#128279;</div>
+        <h3>暂无路由规则</h3>
+        <p>可以通过以下方式添加路由规则：</p>
+        <ul>
+            <li>在 ServiceAtlas 中配置路由规则</li>
+            <li><a href="/routes/edit">编辑本地路由配置</a></li>
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="section">
+        <h2>路由刷新</h2>
+        <div class="refresh-info">
+            <p>路由规则每 <strong>{{ refresh_interval }}</strong> 秒自动刷新</p>
+            <button class="btn btn-primary" onclick="location.reload()">立即刷新页面</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

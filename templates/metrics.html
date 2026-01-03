@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="metrics-page">
+    <h1>指标监控</h1>
+
+    <!-- 概览指标 -->
+    <div class="section">
+        <h2>请求概览</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon requests">&#128200;</div>
+                <div class="stat-info">
+                    <span class="stat-value">{{ stats.total_requests }}</span>
+                    <span class="stat-label">总请求数</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon success">&#9989;</div>
+                <div class="stat-info">
+                    <span class="stat-value">{{ stats.success_count }}</span>
+                    <span class="stat-label">成功请求</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon errors">&#10060;</div>
+                <div class="stat-info">
+                    <span class="stat-value">{{ stats.total_errors }}</span>
+                    <span class="stat-label">错误请求</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon rate">&#128202;</div>
+                <div class="stat-info">
+                    <span class="stat-value">{{ stats.success_rate }}%</span>
+                    <span class="stat-label">成功率</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 延迟指标 -->
+    <div class="section">
+        <h2>延迟分布</h2>
+        <div class="latency-grid">
+            <div class="latency-card">
+                <div class="latency-bar" style="--height: {{ [stats.avg_latency_ms / 5, 100] | min }}%"></div>
+                <span class="latency-value">{{ stats.avg_latency_ms }} ms</span>
+                <span class="latency-label">平均延迟</span>
+            </div>
+            <div class="latency-card">
+                <div class="latency-bar" style="--height: {{ [stats.p50_latency_ms / 5, 100] | min }}%"></div>
+                <span class="latency-value">{{ stats.p50_latency_ms }} ms</span>
+                <span class="latency-label">P50</span>
+            </div>
+            <div class="latency-card">
+                <div class="latency-bar" style="--height: {{ [stats.p95_latency_ms / 5, 100] | min }}%"></div>
+                <span class="latency-value">{{ stats.p95_latency_ms }} ms</span>
+                <span class="latency-label">P95</span>
+            </div>
+            <div class="latency-card">
+                <div class="latency-bar" style="--height: {{ [stats.p99_latency_ms / 5, 100] | min }}%"></div>
+                <span class="latency-value">{{ stats.p99_latency_ms }} ms</span>
+                <span class="latency-label">P99</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 状态码分布 -->
+    {% if stats.status_codes %}
+    <div class="section">
+        <h2>状态码分布</h2>
+        <div class="status-codes">
+            {% for code, count in stats.status_codes.items() %}
+            <div class="status-code-item status-{{ code // 100 }}xx">
+                <span class="code">{{ code }}</span>
+                <span class="count">{{ count }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 按路由统计 -->
+    <div class="section">
+        <h2>按路由统计</h2>
+        {% if route_stats %}
+        <table class="metrics-table">
+            <thead>
+                <tr>
+                    <th>路由</th>
+                    <th>请求数</th>
+                    <th>错误数</th>
+                    <th>成功率</th>
+                    <th>平均延迟</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in route_stats %}
+                <tr>
+                    <td><code>{{ item.route }}</code></td>
+                    <td>{{ item.requests }}</td>
+                    <td class="{% if item.errors > 0 %}has-errors{% endif %}">{{ item.errors }}</td>
+                    <td>
+                        <span class="success-rate {% if item.success_rate < 90 %}warning{% endif %}{% if item.success_rate < 50 %}danger{% endif %}">
+                            {{ item.success_rate }}%
+                        </span>
+                    </td>
+                    <td>{{ item.avg_latency_ms }} ms</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-message">暂无路由统计数据</p>
+        {% endif %}
+    </div>
+
+    <!-- 导出选项 -->
+    <div class="section">
+        <h2>指标导出</h2>
+        <div class="actions">
+            <a href="/metrics" class="btn btn-primary" target="_blank">Prometheus 格式</a>
+            <a href="/metrics/summary" class="btn btn-secondary" target="_blank">JSON 摘要</a>
+            <button class="btn btn-outline" onclick="location.reload()">刷新页面</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 每 5 秒自动刷新
+setTimeout(() => location.reload(), 30000);
+</script>
+{% endblock %}

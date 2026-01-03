@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=7">
+    <script>window.DEBUG = {{ debug | tojson }};</script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/">
+                <span class="logo">H</span>
+                <span class="brand-text">Hermes</span>
+            </a>
+        </div>
+        <ul class="nav-links">
+            <li>
+                <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">
+                    仪表盘
+                </a>
+            </li>
+            <li>
+                <a href="/services" class="{% if request.url.path == '/services' %}active{% endif %}">
+                    服务目录
+                </a>
+            </li>
+            <li>
+                <a href="/routes" class="{% if request.url.path == '/routes' %}active{% endif %}">
+                    路由规则
+                </a>
+            </li>
+            <li>
+                <a href="/routes/edit" class="{% if request.url.path == '/routes/edit' %}active{% endif %}">
+                    本地配置
+                </a>
+            </li>
+            <li>
+                <a href="/metrics-view" class="{% if request.url.path == '/metrics-view' %}active{% endif %}">
+                    指标监控
+                </a>
+            </li>
+            {% if debug %}
+            <li>
+                <a href="/docs" target="_blank">API 文档</a>
+            </li>
+            {% endif %}
+        </ul>
+        <div class="nav-status">
+            <span class="status-dot healthy"></span>
+            <span class="status-text">v{{ version }}</span>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>Hermes API Gateway v{{ version }} - 轻量级 API 网关</p>
+    </footer>
+
+    <script src="/static/js/main.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="routes-edit-page">
+    <div class="page-header">
+        <h1>本地路由配置</h1>
+        <div class="header-actions">
+            <span class="file-path">{{ local_routes_file }}</span>
+            <button class="btn btn-secondary" id="btn-reload">重新加载</button>
+            <button class="btn btn-primary" id="btn-save">保存配置</button>
+        </div>
+    </div>
+
+    <div class="editor-notice">
+        <p>本地路由配置优先于 ServiceAtlas 远程规则。当 ServiceAtlas 不可用时，网关将使用本地配置。</p>
+    </div>
+
+    <div class="editor-container">
+        <div class="editor-toolbar">
+            <span class="toolbar-title">routes.yaml</span>
+            <div class="toolbar-actions">
+                <button class="btn-icon" id="btn-format" title="格式化">格式化</button>
+                <button class="btn-icon" id="btn-validate" title="验证语法">验证</button>
+            </div>
+        </div>
+        <textarea id="yaml-editor" class="yaml-editor" spellcheck="false">{{ yaml_content }}</textarea>
+        <div id="editor-status" class="editor-status"></div>
+    </div>
+
+    <div class="config-help">
+        <h3>配置说明</h3>
+        <div class="help-content">
+            <h4>路由规则字段</h4>
+            <table class="help-table">
+                <tr>
+                    <td><code>path_pattern</code></td>
+                    <td>路径匹配模式，支持 <code>*</code>（单级）、<code>**</code>（多级）、<code>{id}</code>（参数）</td>
+                </tr>
+                <tr>
+                    <td><code>target_url</code></td>
+                    <td>目标服务 URL（直接指定，无需 ServiceAtlas）</td>
+                </tr>
+                <tr>
+                    <td><code>target_service_id</code></td>
+                    <td>目标服务 ID（从 ServiceAtlas 获取服务信息）</td>
+                </tr>
+                <tr>
+                    <td><code>methods</code></td>
+                    <td>HTTP 方法限制，如 <code>GET,POST</code> 或 <code>*</code>（所有方法）</td>
+                </tr>
+                <tr>
+                    <td><code>priority</code></td>
+                    <td>优先级（数值越大越优先），本地规则会额外加 {{ local_priority_boost }}</td>
+                </tr>
+                <tr>
+                    <td><code>strip_prefix</code></td>
+                    <td>是否剥离路径前缀</td>
+                </tr>
+                <tr>
+                    <td><code>strip_path</code></td>
+                    <td>要剥离的路径（如 <code>/api/docs</code>）</td>
+                </tr>
+                <tr>
+                    <td><code>auth_config</code></td>
+                    <td>认证配置（见下方）</td>
+                </tr>
+            </table>
+
+            <h4>认证配置（auth_config）</h4>
+            <table class="help-table">
+                <tr>
+                    <td><code>require_auth</code></td>
+                    <td>是否需要认证（true/false）</td>
+                </tr>
+                <tr>
+                    <td><code>auth_service_id</code></td>
+                    <td>认证服务 ID（如 aegis）</td>
+                </tr>
+                <tr>
+                    <td><code>public_paths</code></td>
+                    <td>公开路径列表（不需要认证）</td>
+                </tr>
+                <tr>
+                    <td><code>login_redirect</code></td>
+                    <td>登录重定向路径</td>
+                </tr>
+            </table>
+
+            <h4>配置示例</h4>
+            <pre class="code-example">routes:
+  # 直接代理到指定 URL
+  - path_pattern: "/auth/**"
+    target_url: "http://localhost:8000"
+    priority: 100
+    strip_prefix: true
+    strip_path: "/auth"
+    auth_config:
+      require_auth: false
+
+  # 使用 ServiceAtlas 中的服务
+  - path_pattern: "/api/docs/**"
+    target_service_id: "deckview"
+    priority: 50
+    auth_config:
+      require_auth: true
+      auth_service_id: "aegis"
+      public_paths:
+        - "/api/docs/public/**"</pre>
+        </div>
+    </div>
+
+    <div class="route-stats">
+        <h3>当前路由统计</h3>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <span class="stat-value">{{ remote_routes }}</span>
+                <span class="stat-label">远程规则</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">{{ local_routes }}</span>
+                <span class="stat-label">本地规则</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">{{ total_routes }}</span>
+                <span class="stat-label">总计</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value {{ 'healthy' if registry_available else 'unhealthy' }}">
+                    {{ "可用" if registry_available else "不可用" }}
+                </span>
+                <span class="stat-label">ServiceAtlas</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const editor = document.getElementById('yaml-editor');
+    const statusEl = document.getElementById('editor-status');
+    const btnSave = document.getElementById('btn-save');
+    const btnReload = document.getElementById('btn-reload');
+    const btnValidate = document.getElementById('btn-validate');
+
+    // 设置编辑器初始高度
+    editor.style.height = Math.max(400, editor.scrollHeight) + 'px';
+
+    // 自动调整高度
+    editor.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.max(400, this.scrollHeight) + 'px';
+    });
+
+    // Tab 键支持
+    editor.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+            this.selectionStart = this.selectionEnd = start + 2;
+        }
+    });
+
+    function showStatus(message, type) {
+        statusEl.textContent = message;
+        statusEl.className = 'editor-status ' + type;
+        if (type === 'success') {
+            setTimeout(() => {
+                statusEl.textContent = '';
+                statusEl.className = 'editor-status';
+            }, 3000);
+        }
+    }
+
+    // 保存配置
+    btnSave.addEventListener('click', async function() {
+        btnSave.disabled = true;
+        btnSave.textContent = '保存中...';
+        showStatus('正在保存...', 'info');
+
+        try {
+            const response = await fetch('/api/routes/local', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: editor.value })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                showStatus('保存成功！已加载 ' + result.local_routes + ' 条本地规则', 'success');
+            } else {
+                showStatus('保存失败: ' + (result.detail || result.error), 'error');
+            }
+        } catch (e) {
+            showStatus('保存失败: ' + e.message, 'error');
+        } finally {
+            btnSave.disabled = false;
+            btnSave.textContent = '保存配置';
+        }
+    });
+
+    // 重新加载
+    btnReload.addEventListener('click', async function() {
+        if (!confirm('确定要重新加载配置吗？未保存的更改将丢失。')) {
+            return;
+        }
+
+        btnReload.disabled = true;
+        showStatus('正在加载...', 'info');
+
+        try {
+            const response = await fetch('/api/routes/local');
+            const result = await response.json();
+
+            if (response.ok) {
+                editor.value = result.content;
+                editor.style.height = 'auto';
+                editor.style.height = Math.max(400, editor.scrollHeight) + 'px';
+                showStatus('已重新加载配置', 'success');
+            } else {
+                showStatus('加载失败: ' + (result.detail || result.error), 'error');
+            }
+        } catch (e) {
+            showStatus('加载失败: ' + e.message, 'error');
+        } finally {
+            btnReload.disabled = false;
+        }
+    });
+
+    // 验证语法
+    btnValidate.addEventListener('click', async function() {
+        showStatus('正在验证...', 'info');
+
+        try {
+            const response = await fetch('/api/routes/local/validate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: editor.value })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.valid) {
+                showStatus('语法验证通过！共 ' + result.route_count + ' 条规则', 'success');
+            } else {
+                showStatus('验证失败: ' + (result.error || result.detail), 'error');
+            }
+        } catch (e) {
+            showStatus('验证失败: ' + e.message, 'error');
+        }
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard">
+    <h1>网关概览</h1>
+
+    <!-- 状态卡片 -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon uptime">&#9201;</div>
+            <div class="stat-info">
+                <span class="stat-value">{{ stats.uptime }}</span>
+                <span class="stat-label">运行时间</span>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon routes">&#128279;</div>
+            <div class="stat-info">
+                <span class="stat-value">{{ stats.route_count }}</span>
+                <span class="stat-label">路由规则</span>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon requests">&#128200;</div>
+            <div class="stat-info">
+                <span class="stat-value">{{ stats.total_requests }}</span>
+                <span class="stat-label">总请求数</span>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon success">&#9989;</div>
+            <div class="stat-info">
+                <span class="stat-value">{{ stats.success_rate }}%</span>
+                <span class="stat-label">成功率</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 性能指标 -->
+    <div class="section">
+        <h2>性能指标</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <span class="metric-label">平均延迟</span>
+                <span class="metric-value">{{ stats.avg_latency_ms }} ms</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-label">P50 延迟</span>
+                <span class="metric-value">{{ stats.p50_latency_ms }} ms</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-label">P95 延迟</span>
+                <span class="metric-value">{{ stats.p95_latency_ms }} ms</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-label">P99 延迟</span>
+                <span class="metric-value">{{ stats.p99_latency_ms }} ms</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 插件状态 -->
+    <div class="section">
+        <h2>插件状态</h2>
+        <div class="plugins-list">
+            {% for plugin in stats.plugins %}
+            <div class="plugin-item">
+                <span class="plugin-name">{{ plugin.name }}</span>
+                <span class="plugin-priority">优先级: {{ plugin.priority }}</span>
+                <span class="plugin-status {% if plugin.enabled %}enabled{% else %}disabled{% endif %}">
+                    {{ '已启用' if plugin.enabled else '已禁用' }}
+                </span>
+            </div>
+            {% else %}
+            <p class="empty-message">暂无加载的插件</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- ServiceAtlas 连接状态 -->
+    <div class="section">
+        <h2>服务注册中心</h2>
+        <div class="registry-info">
+            {% if stats.registry_enabled %}
+            <div class="registry-status {% if stats.registry_available %}connected{% else %}disconnected{% endif %}">
+                <span class="status-icon">{% if stats.registry_available %}&#9989;{% else %}&#10060;{% endif %}</span>
+                <span class="status-text">{% if stats.registry_available %}已连接{% else %}连接失败{% endif %}</span>
+            </div>
+            <div class="registry-details">
+                <p><strong>地址：</strong>{{ stats.registry_url }}</p>
+                <p><strong>最后更新：</strong>{{ stats.last_route_update }}</p>
+            </div>
+            {% else %}
+            <div class="registry-status disconnected">
+                <span class="status-icon">&#10060;</span>
+                <span class="status-text">未启用</span>
+            </div>
+            <p class="registry-hint">启动时使用 --registry-url 参数连接 ServiceAtlas</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 快捷操作 -->
+    <div class="section">
+        <h2>快捷操作</h2>
+        <div class="actions">
+            <a href="/routes" class="btn btn-primary">查看路由规则</a>
+            <a href="/metrics-view" class="btn btn-secondary">查看详细指标</a>
+            <a href="/health" class="btn btn-outline" target="_blank">健康检查</a>
+            <a href="/metrics" class="btn btn-outline" target="_blank">Prometheus 指标</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 自动刷新统计数据
+async function refreshStats() {
+    try {
+        const response = await fetch('/api/stats');
+        if (response.ok) {
+            const stats = await response.json();
+            // 更新页面上的统计数据
+            document.querySelector('.stat-card:nth-child(1) .stat-value').textContent = stats.uptime;
+            document.querySelector('.stat-card:nth-child(3) .stat-value').textContent = stats.total_requests;
+            document.querySelector('.stat-card:nth-child(4) .stat-value').textContent = stats.success_rate + '%';
+        }
+    } catch (error) {
+        console.error('刷新统计数据失败:', error);
+    }
+}
+
+// 每 10 秒刷新一次
+setInterval(refreshStats, 10000);
+</script>
+{% endblock %}

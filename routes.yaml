@@ -1,0 +1,38 @@
+# Hermes 本地路由配置
+#
+# 本地路由优先级高于 ServiceAtlas 规则
+# 当 ServiceAtlas 不可用时，将使用此配置
+
+# 路由规则列表
+routes:
+  # 示例：直接代理到 Aegis 认证服务
+  # - path_pattern: "/auth/**"
+  #   target_url: "http://localhost:8000"
+  #   strip_prefix: true
+  #   strip_path: "/auth"
+  #   priority: 100
+  #   methods: "*"
+  #   auth_config:
+  #     require_auth: false  # 登录接口不需要认证
+
+  # 示例：代理到 ServiceAtlas 注册的服务
+  # - path_pattern: "/api/docs/**"
+  #   target_service_id: "deckview"  # 从 ServiceAtlas 获取服务信息
+  #   priority: 50
+  #   auth_config:
+  #     require_auth: true
+  #     auth_service_id: "aegis"
+  #     public_paths: ["/api/docs/public/**"]
+
+# 默认认证服务 ID（未指定时使用）
+default_auth_service_id: "aegis"
+
+# 全局认证配置（可被路由级别覆盖）
+default_auth_config:
+  require_auth: false      # 默认不需要认证
+  public_paths:            # 全局公开路径
+    - "/health"
+    - "/ready"
+    - "/docs"
+    - "/redoc"
+    - "/openapi.json"
