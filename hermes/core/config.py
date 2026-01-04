@@ -126,8 +126,8 @@ class Settings(BaseSettings):
     fallback_to_local: bool = True
 
     # ========== 认证配置 ==========
-    # 是否启用认证插件
-    auth_plugin_enabled: bool = False
+    # 是否启用认证插件（网关代理路由的认证检查）
+    auth_plugin_enabled: bool = True
     # 认证服务不可用时是否放行请求
     auth_degrade_allow: bool = False
 

@@ -33,6 +33,7 @@ class WebAuthMiddleware(BaseHTTPMiddleware):
     # 需要认证的路径前缀
     PROTECTED_PATHS = [
         "/",
+        "/services",
         "/routes",
         "/routes/edit",
         "/metrics-view",
