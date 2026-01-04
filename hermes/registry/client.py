@@ -2,6 +2,8 @@
 ServiceAtlas 注册客户端
 
 负责将 Hermes 注册到 ServiceAtlas 并维护心跳
+
+优先使用 ServiceAtlas SDK，若未安装则使用内置实现
 """
 
 import asyncio
@@ -14,6 +16,147 @@ from hermes.core.logging import get_logger
 logger = get_logger("hermes.registry.client")
 
 
+# ================== 尝试导入 SDK ==================
+try:
+    from serviceatlas_client import AsyncServiceAtlasClient
+    SDK_AVAILABLE = True
+    logger.debug("使用 ServiceAtlas SDK")
+except ImportError:
+    SDK_AVAILABLE = False
+    logger.debug("SDK 未安装，使用内置实现")
+
+
+# ================== 内置实现（SDK 不可用时使用）==================
+if not SDK_AVAILABLE:
+    class AsyncServiceAtlasClient:
+        """
+        内置的 ServiceAtlas 异步注册客户端
+        仅在 SDK 未安装时使用，接口与 SDK 保持一致
+        """
+
+        def __init__(
+            self,
+            registry_url: str,
+            service_id: str,
+            service_name: str,
+            host: str,
+            port: int,
+            protocol: str = "http",
+            health_check_path: str = "/health",
+            is_gateway: bool = False,
+            base_path: str = "",
+            metadata: Optional[Dict[str, Any]] = None,
+            heartbeat_interval: int = 30,
+            trust_env: bool = True,
+        ):
+            self.registry_url = registry_url.rstrip("/")
+            self.service_id = service_id
+            self.service_name = service_name
+            self.host = host
+            self.port = port
+            self.protocol = protocol
+            self.health_check_path = health_check_path
+            self.is_gateway = is_gateway
+            self.base_path = base_path
+            self.metadata = metadata or {}
+            self.heartbeat_interval = heartbeat_interval
+            self.trust_env = trust_env
+
+            self._running = False
+            self._heartbeat_task: Optional[asyncio.Task] = None
+
+        async def start(self) -> bool:
+            """启动客户端：注册服务并开始心跳"""
+            if self._running:
+                return True
+
+            if not await self._register():
+                return False
+
+            self._running = True
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+            return True
+
+        async def stop(self):
+            """停止客户端：停止心跳并注销服务"""
+            if not self._running:
+                return
+
+            self._running = False
+
+            if self._heartbeat_task:
+                self._heartbeat_task.cancel()
+                try:
+                    await self._heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+            await self._unregister()
+
+        async def _register(self) -> bool:
+            """注册服务到 ServiceAtlas"""
+            try:
+                register_data = {
+                    "id": self.service_id,
+                    "name": self.service_name,
+                    "host": self.host,
+                    "port": self.port,
+                    "protocol": self.protocol,
+                    "health_check_path": self.health_check_path,
+                    "is_gateway": self.is_gateway,
+                    "service_meta": self.metadata,
+                }
+                if self.base_path:
+                    register_data["base_path"] = self.base_path
+
+                async with httpx.AsyncClient(timeout=10, trust_env=self.trust_env) as client:
+                    response = await client.post(
+                        f"{self.registry_url}/api/v1/services",
+                        json=register_data
+                    )
+                    if response.status_code in (200, 201):
+                        return True
+                    elif response.status_code == 409:
+                        # 服务已存在，尝试更新
+                        update_response = await client.put(
+                            f"{self.registry_url}/api/v1/services/{self.service_id}",
+                            json=register_data,
+                        )
+                        return update_response.status_code == 200
+                    else:
+                        return False
+            except Exception:
+                return False
+
+        async def _unregister(self):
+            """从 ServiceAtlas 注销服务"""
+            try:
+                async with httpx.AsyncClient(timeout=5, trust_env=self.trust_env) as client:
+                    await client.delete(
+                        f"{self.registry_url}/api/v1/services/{self.service_id}"
+                    )
+            except Exception:
+                pass
+
+        async def _heartbeat_loop(self):
+            """心跳循环"""
+            while self._running:
+                await asyncio.sleep(self.heartbeat_interval)
+                if self._running:
+                    await self._send_heartbeat()
+
+        async def _send_heartbeat(self):
+            """发送心跳"""
+            try:
+                async with httpx.AsyncClient(timeout=5, trust_env=self.trust_env) as client:
+                    await client.post(
+                        f"{self.registry_url}/api/v1/services/{self.service_id}/heartbeat"
+                    )
+            except Exception:
+                pass
+
+
+# ================== RegistryClient 封装类 ==================
 class RegistryClient:
     """
     ServiceAtlas 注册客户端
@@ -22,6 +165,8 @@ class RegistryClient:
     - 服务注册（标记为网关）
     - 心跳维护
     - 优雅注销
+
+    内部优先使用 ServiceAtlas SDK，未安装时使用内置实现
     """
 
     def __init__(
@@ -57,16 +202,37 @@ class RegistryClient:
         self.service_name = service_name
         self.host = host
         self.port = port
-        self.protocol = protocol
-        self.health_check_path = health_check_path
-        self.metadata = metadata or {}
         self.heartbeat_interval = heartbeat_interval
-        self.timeout = timeout
 
-        # 运行状态
+        # 构建网关特有的元数据
+        gateway_metadata = {
+            **(metadata or {}),
+            "type": "api_gateway",
+            "features": [
+                "routing",
+                "load_balancing",
+                "rate_limiting",
+                "circuit_breaker",
+            ],
+        }
+
+        # 创建内部客户端（SDK 或内置实现）
+        self._sdk_client = AsyncServiceAtlasClient(
+            registry_url=registry_url,
+            service_id=service_id,
+            service_name=service_name,
+            host=host,
+            port=port,
+            protocol=protocol,
+            health_check_path=health_check_path,
+            is_gateway=True,  # Hermes 作为网关
+            base_path="",
+            metadata=gateway_metadata,
+            heartbeat_interval=heartbeat_interval,
+            trust_env=False,  # 禁用代理，避免环境变量干扰
+        )
+
         self._running = False
-        # 心跳任务
-        self._heartbeat_task: Optional[asyncio.Task] = None
 
     async def start(self) -> bool:
         """
@@ -78,8 +244,9 @@ class RegistryClient:
         if self._running:
             return True
 
-        # 注册服务
-        success = await self._register()
+        # 使用 SDK 客户端启动
+        success = await self._sdk_client.start()
+
         if not success:
             logger.warning(
                 "注册失败，Hermes 将以离线模式运行",
@@ -89,9 +256,6 @@ class RegistryClient:
 
         self._running = True
 
-        # 启动心跳任务
-        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-
         logger.info(
             f"已注册到 ServiceAtlas: {self.registry_url}",
             extra={
@@ -99,6 +263,7 @@ class RegistryClient:
                     "service_id": self.service_id,
                     "service_name": self.service_name,
                     "heartbeat_interval": self.heartbeat_interval,
+                    "sdk_available": SDK_AVAILABLE,
                 }
             },
         )
@@ -111,144 +276,10 @@ class RegistryClient:
 
         self._running = False
 
-        # 取消心跳任务
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            try:
-                await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-        # 注销服务
-        await self._unregister()
+        # 使用 SDK 客户端停止
+        await self._sdk_client.stop()
 
         logger.info(
             f"已从 ServiceAtlas 注销: {self.registry_url}",
             extra={"extra_fields": {"service_id": self.service_id}},
         )
-
-    async def _register(self) -> bool:
-        """
-        注册到 ServiceAtlas
-
-        Returns:
-            注册是否成功
-        """
-        register_data = {
-            "id": self.service_id,
-            "name": self.service_name,
-            "host": self.host,
-            "port": self.port,
-            "protocol": self.protocol,
-            "health_check_path": self.health_check_path,
-            "is_gateway": True,  # 关键：标记为网关，以便获取路由规则
-            "service_meta": {
-                **self.metadata,
-                "type": "api_gateway",
-                "features": [
-                    "routing",
-                    "load_balancing",
-                    "rate_limiting",
-                    "circuit_breaker",
-                ],
-            },
-        }
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{self.registry_url}/api/v1/services",
-                    json=register_data,
-                )
-
-                if response.status_code in (200, 201):
-                    logger.debug(
-                        "服务注册成功",
-                        extra={"extra_fields": {"service_id": self.service_id}},
-                    )
-                    return True
-
-                elif response.status_code == 409:
-                    # 服务已存在，尝试更新
-                    logger.debug("服务已存在，尝试更新")
-                    update_response = await client.put(
-                        f"{self.registry_url}/api/v1/services/{self.service_id}",
-                        json=register_data,
-                    )
-                    return update_response.status_code == 200
-
-                else:
-                    logger.warning(
-                        f"注册失败: HTTP {response.status_code}",
-                        extra={
-                            "extra_fields": {
-                                "status_code": response.status_code,
-                                "response": response.text[:200],
-                            }
-                        },
-                    )
-
-        except httpx.TimeoutException:
-            logger.warning(
-                "注册超时",
-                extra={"extra_fields": {"registry_url": self.registry_url}},
-            )
-        except httpx.RequestError as e:
-            logger.warning(
-                f"注册请求错误: {type(e).__name__}: {e}",
-                extra={"extra_fields": {"error": str(e)}},
-            )
-        except Exception as e:
-            logger.error(
-                f"注册异常: {type(e).__name__}: {e}",
-                exc_info=True,
-            )
-
-        return False
-
-    async def _unregister(self) -> None:
-        """从 ServiceAtlas 注销"""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.delete(
-                    f"{self.registry_url}/api/v1/services/{self.service_id}"
-                )
-                logger.debug(
-                    "服务注销成功",
-                    extra={"extra_fields": {"service_id": self.service_id}},
-                )
-        except Exception as e:
-            logger.debug(
-                f"服务注销失败（可忽略）: {type(e).__name__}: {e}",
-                extra={"extra_fields": {"error": str(e)}},
-            )
-
-    async def _heartbeat_loop(self) -> None:
-        """心跳循环"""
-        while self._running:
-            await asyncio.sleep(self.heartbeat_interval)
-            if self._running:
-                await self._send_heartbeat()
-
-    async def _send_heartbeat(self) -> None:
-        """发送心跳"""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(
-                    f"{self.registry_url}/api/v1/services/{self.service_id}/heartbeat"
-                )
-                if response.status_code == 200:
-                    logger.debug(
-                        "心跳发送成功",
-                        extra={"extra_fields": {"service_id": self.service_id}},
-                    )
-                else:
-                    logger.warning(
-                        f"心跳响应异常: HTTP {response.status_code}",
-                        extra={"extra_fields": {"status_code": response.status_code}},
-                    )
-        except Exception as e:
-            logger.debug(
-                f"心跳发送失败: {type(e).__name__}: {e}",
-                extra={"extra_fields": {"error": str(e)}},
-            )
