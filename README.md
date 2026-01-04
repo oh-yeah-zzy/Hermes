@@ -185,7 +185,7 @@ HERMES_LOCAL_ROUTES_PRIORITY_BOOST=1000
 HERMES_FALLBACK_TO_LOCAL=true
 
 # === 认证插件 ===
-HERMES_AUTH_PLUGIN_ENABLED=false
+HERMES_AUTH_PLUGIN_ENABLED=true
 HERMES_AUTH_DEGRADE_ALLOW=false
 ```
 
@@ -193,34 +193,35 @@ HERMES_AUTH_DEGRADE_ALLOW=false
 
 ## 认证插件
 
-启用认证插件后，Hermes 会根据 **ServiceAtlas 下发的路由规则** 中的 `auth_config` 检查认证状态：
+认证插件默认启用，Hermes 会根据 **ServiceAtlas 下发的路由规则** 中的 `auth_config` 检查认证状态：
 
 ```bash
-# 启用认证插件
-export HERMES_AUTH_PLUGIN_ENABLED=true
+# 禁用认证插件（默认启用）
+export HERMES_AUTH_PLUGIN_ENABLED=false
 
 # 认证服务不可用时是否放行（降级策略）
 export HERMES_AUTH_DEGRADE_ALLOW=false
 ```
 
-> **注意**：登录重定向 URL (`login_redirect`) 必须在 ServiceAtlas 的路由规则中配置，Hermes 不提供本地默认值。
-> 如果路由规则未配置 `auth_config.login_redirect`，未认证的网页请求将返回 401。
+> **注意**：`login_redirect` 由 ServiceAtlas 自动生成，使用网关代理路径（如 `/aegis/admin/login`）。
+> 服务注册时在 `service_meta.auth_config` 中声明认证需求，路由规则会自动继承。
 
-### 在 ServiceAtlas 配置路由认证
+### 服务注册时声明认证需求（推荐）
 
-```json
-POST /api/v1/routes
-{
-    "path_pattern": "/api/**",
-    "target_service_id": "my-service",
+服务注册时在 `service_meta` 中声明 `auth_config`，ServiceAtlas 会自动应用到路由规则：
+
+```python
+# 服务注册时声明认证需求
+metadata={
     "auth_config": {
-        "require_auth": true,
+        "require_auth": True,
         "auth_service_id": "aegis",
-        "public_paths": ["/api/docs", "/api/health"],
-        "login_redirect": "http://localhost:8000/admin/login"
+        "public_paths": ["/health", "/api/docs"],
     }
 }
 ```
+
+`login_redirect` 会自动生成为网关代理路径（如 `/aegis/admin/login`），无需手动配置。
 
 ### 认证流程
 
