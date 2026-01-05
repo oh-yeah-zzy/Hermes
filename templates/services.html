@@ -4,13 +4,13 @@
 <div class="services-page">
     <div class="page-header">
         <h1>服务目录</h1>
-        <span class="header-info">点击服务卡片进入对应服务</span>
+        <span class="header-info">点击服务卡片在新标签页打开对应服务</span>
     </div>
 
     {% if services %}
     <div class="services-grid">
         {% for service in services %}
-        <a href="{{ service.base_url }}" class="service-card status-{{ service.status }}" data-icon="{{ service.icon }}">
+        <a href="{{ service.base_url }}" class="service-card status-{{ service.status }}" data-icon="{{ service.icon }}" target="_blank" rel="noopener noreferrer">
             <div class="service-header">
                 <span class="service-icon">
                     {% if service.icon == 'shield' %}
