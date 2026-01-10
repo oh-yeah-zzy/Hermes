@@ -30,9 +30,10 @@ default_auth_service_id: "aegis"
 # 全局认证配置（可被路由级别覆盖）
 default_auth_config:
   require_auth: false      # 默认不需要认证
-  public_paths:            # 全局公开路径
+  public_paths:            # 全局公开路径（仅健康检查）
     - "/health"
     - "/ready"
-    - "/docs"
-    - "/redoc"
-    - "/openapi.json"
+    # API 文档不再公开，需要认证后才能访问
+    # - "/docs"
+    # - "/redoc"
+    # - "/openapi.json"

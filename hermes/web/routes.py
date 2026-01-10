@@ -300,10 +300,10 @@ default_auth_service_id: "aegis"
 # 全局认证配置（可被路由级别覆盖）
 default_auth_config:
   require_auth: false
+  # API 文档不再公开，需要认证后才能访问
   public_paths:
     - "/health"
     - "/ready"
-    - "/docs"
 """
 
     context_data = {
